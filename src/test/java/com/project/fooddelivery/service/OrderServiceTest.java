@@ -1,0 +1,105 @@
+package com.project.fooddelivery.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import com.project.fooddelivery.domain.City;
+import com.project.fooddelivery.domain.CustomerOrder;
+import com.project.fooddelivery.domain.MenuItem;
+import com.project.fooddelivery.domain.Restaurant;
+import com.project.fooddelivery.dto.OrderLineRequest;
+import com.project.fooddelivery.dto.OrderResponse;
+import com.project.fooddelivery.dto.PlaceOrderRequest;
+import com.project.fooddelivery.exception.BusinessException;
+import com.project.fooddelivery.repository.CustomerOrderRepository;
+import com.project.fooddelivery.repository.MenuItemRepository;
+import com.project.fooddelivery.repository.RestaurantRepository;
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
+
+@ExtendWith(MockitoExtension.class)
+class OrderServiceTest {
+
+    @Mock
+    private RestaurantRepository restaurantRepository;
+
+    @Mock
+    private MenuItemRepository menuItemRepository;
+
+    @Mock
+    private CustomerOrderRepository customerOrderRepository;
+
+    @Mock
+    private CurrentUserService currentUserService;
+
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
+
+    private OrderService orderService;
+
+    @BeforeEach
+    void setUp() {
+        orderService = new OrderService(
+            restaurantRepository,
+            menuItemRepository,
+            customerOrderRepository,
+            currentUserService,
+            new ApiMapper(),
+            eventPublisher
+        );
+    }
+
+    @Test
+    void placeOrderDeductsStockAndCreatesPaidOrder() {
+        City city = new City("Delhi");
+        Restaurant restaurant = new Restaurant("Spice Hub", "owner1", city);
+        MenuItem menuItem = new MenuItem("Paneer Roll", new BigDecimal("120.00"), 10, restaurant);
+        PlaceOrderRequest request = new PlaceOrderRequest(
+            1L,
+            List.of(new OrderLineRequest(5L, 2))
+        );
+
+        when(currentUserService.username()).thenReturn("customer1");
+        when(restaurantRepository.findById(1L)).thenReturn(Optional.of(restaurant));
+        when(menuItemRepository.findByIdAndRestaurant_Id(5L, 1L)).thenReturn(Optional.of(menuItem));
+        when(customerOrderRepository.save(any(CustomerOrder.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        OrderResponse response = orderService.placeOrder(request);
+
+        assertThat(menuItem.getStock()).isEqualTo(8);
+        assertThat(response.customerUsername()).isEqualTo("customer1");
+        assertThat(response.totalAmount()).isEqualByComparingTo("240.00");
+        assertThat(response.paymentStatus().name()).isEqualTo("PAID");
+        assertThat(response.items()).hasSize(1);
+        verify(eventPublisher).publishEvent(any(OrderStatusChangedEvent.class));
+    }
+
+    @Test
+    void placeOrderFailsWhenStockIsInsufficient() {
+        City city = new City("Delhi");
+        Restaurant restaurant = new Restaurant("Spice Hub", "owner1", city);
+        MenuItem menuItem = new MenuItem("Paneer Roll", new BigDecimal("120.00"), 1, restaurant);
+        PlaceOrderRequest request = new PlaceOrderRequest(
+            1L,
+            List.of(new OrderLineRequest(5L, 2))
+        );
+
+        when(currentUserService.username()).thenReturn("customer1");
+        when(restaurantRepository.findById(1L)).thenReturn(Optional.of(restaurant));
+        when(menuItemRepository.findByIdAndRestaurant_Id(5L, 1L)).thenReturn(Optional.of(menuItem));
+
+        assertThatThrownBy(() -> orderService.placeOrder(request))
+            .isInstanceOf(BusinessException.class)
+            .hasMessageContaining("Insufficient stock");
+    }
+}
