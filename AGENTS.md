@@ -4,7 +4,6 @@ This repository was scaffolded and implemented with help from Codex as a local c
 
 ## How AI Was Used
 
-- Reviewed the PDF requirement and converted it into a smaller college-project-friendly scope
 - Proposed the package structure, entities, APIs, and implementation approach
 - Generated the initial Spring Boot 3 + Java 17 project files
 - Added README-based assumptions and Windows/VS Code setup notes
