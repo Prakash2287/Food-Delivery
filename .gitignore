@@ -1,6 +1,7 @@
 target/
 .idea/
-.vscode/
+.vscode/*
+!.vscode/launch.json
+!.vscode/extensions.json
 *.iml
 *.log
-
